@@ -3,7 +3,7 @@
 # Author
 # original author:https://github.com/gongzili456
 # modified by:https://github.com/haoel
-# modified by:https://github.com/superzdev
+# modified by:https://github.com/superzdev 2024年07月09日12:09:37
 
 # Ubuntu 18.04 系统环境
 
@@ -87,8 +87,8 @@ install_preinstall(){
 
 install_certbot() {
     echo "开始安装 certbot 命令行工具"
-    # sudo apt-get update -qq
-    # sudo apt-get install -y software-properties-common
+    sudo apt-get update -qq
+    sudo apt-get install -y software-properties-common
     sudo add-apt-repository universe
     sudo add-apt-repository ppa:certbot/certbot
     sudo apt-get update -qq
@@ -183,12 +183,12 @@ init(){
         PS3="Please select a option:"
         re='^[0-7]+$'
         select opt in "安装 TCP BBR 拥塞控制算法" \
-                    "安装 系统必要 更新" \ 
+                    "安装 系统必要 更新" \
                     "安装 Docker 服务程序" \
                     "创建 SSL 证书" \
                     "安装 Gost HTTP/2 代理服务" \
                     "创建证书更新 CronJob" \
-                    "退出" ; do
+                    "退出"; do
 
             if ! [[ $REPLY =~ $re ]] ; then
                 echo -e "${COLOR_ERROR}Invalid option. Please input a number.${COLOR_NONE}"
