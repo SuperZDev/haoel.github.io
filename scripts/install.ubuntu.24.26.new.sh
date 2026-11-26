@@ -27,9 +27,29 @@ check_system() {
     printf '当前系统：Ubuntu %s，内核：%s\n' "$VERSION_ID" "$(uname -r)"
 }
 
+apt_get() {
+    apt-get -o Acquire::Retries=3 -o DPkg::Lock::Timeout=60 "$@"
+}
+
+apt_update() {
+    apt_get update --error-on=any || fail "APT 索引更新失败，请检查网络及报错的软件源，修复后重新运行。"
+}
+
 install_preinstall() {
-    apt-get update
-    apt-get install -y ca-certificates curl kmod procps python3 software-properties-common
+    [[ ${PREINSTALL_DONE:-0} == 1 ]] && return 0
+    printf '正在刷新 APT 索引并安装必要依赖……\n'
+    apt_update
+    apt_get install -y ca-certificates curl kmod procps python3 software-properties-common
+    PREINSTALL_DONE=1
+}
+
+configure_docker_service() {
+    systemctl enable --now docker
+    docker info >/dev/null
+    if docker container inspect gost >/dev/null 2>&1; then
+        docker update --restart=always gost
+        printf '已将现有 Gost 容器的重启策略设为 always。\n'
+    fi
 }
 
 install_bbr() {
@@ -52,8 +72,7 @@ install_bbr() {
 install_docker() {
     local arch package
     if command -v docker >/dev/null 2>&1; then
-        systemctl enable --now docker
-        docker info >/dev/null
+        configure_docker_service
         printf '现有 Docker 服务可用，保留当前安装。\n'
         return
     fi
@@ -81,18 +100,16 @@ Components: stable
 Architectures: ${arch}
 Signed-By: /etc/apt/keyrings/docker.asc
 EOF
-    apt-get update
-    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-    systemctl enable --now docker
-    docker info >/dev/null
+    apt_update
+    apt_get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    configure_docker_service
 }
 
 install_certbot() {
-    apt-get update
-    apt-get install -y software-properties-common
+    install_preinstall
     add-apt-repository -y universe
-    apt-get update
-    apt-get install -y certbot
+    apt_update
+    apt_get install -y certbot
 }
 
 read_domain() {
@@ -122,7 +139,7 @@ install_gost() {
     if docker container inspect gost >/dev/null 2>&1; then
         fail "已存在名为 gost 的容器（可能已停止），请先检查并手动处理。"
     fi
-    command -v python3 >/dev/null 2>&1 || apt-get install -y python3
+    command -v python3 >/dev/null 2>&1 || apt_get install -y python3
     read_domain
     cert="/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"
     key="/etc/letsencrypt/live/${DOMAIN}/privkey.pem"
@@ -138,7 +155,7 @@ install_gost() {
     (( port >= 1 && port <= 65535 && port != 80 )) || fail "端口必须在 1–65535 之间，且不能占用续期所需的 80 端口。"
     encoded_user=$(printf '%s' "$proxy_user" | python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=""))')
     encoded_password=$(printf '%s' "$proxy_password" | python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=""))')
-    docker run -d --name gost --restart unless-stopped \
+    docker run -d --name gost --restart=always \
         -v /etc/letsencrypt:/etc/letsencrypt:ro \
         --net=host ginuerzh/gost \
         -L "http2://${encoded_user}:${encoded_password}@0.0.0.0:${port}?cert=${cert}&key=${key}&probe_resist=code:400&knock=www.google.com"
@@ -164,12 +181,16 @@ EOF
 init() {
     local choice
     check_system
+    install_preinstall
+    if command -v docker >/dev/null 2>&1; then
+        configure_docker_service
+    fi
     while true; do
         printf '\n1) 启用 TCP BBR\n2) 安装系统必要依赖\n3) 安装 Docker\n4) 创建 SSL 证书\n5) 安装 Gost HTTP/2 代理\n6) 配置证书自动续期\n7) 退出\n'
         read -r -p '请选择 [1-7]：' choice || return 0
         case "$choice" in
             1) install_bbr ;;
-            2) install_preinstall ;;
+            2) PREINSTALL_DONE=0; install_preinstall ;;
             3) install_docker ;;
             4) create_cert ;;
             5) install_gost ;;

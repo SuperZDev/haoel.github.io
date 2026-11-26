@@ -12,13 +12,16 @@
 sudo bash scripts/install.ubuntu.24.26.new.sh
 ```
 
-建议依次选择：`2` 安装依赖 → `1` 启用 BBR（可选）→ `3` 安装 Docker → `4` 申请证书 → `5` 启动 Gost。申请证书成功后会自动配置续期，菜单 `6` 可重复配置。
+启动时自动刷新 APT 索引并安装必要依赖，无需先选菜单 `2`。建议依次选择：`1` 启用 BBR（可选）→ `3` 安装 Docker → `4` 申请证书 → `5` 启动 Gost。申请证书成功后会自动配置续期，菜单 `6` 可重复配置。
+
+- APT 保留系统现有软件源，自动安装 `software-properties-common`、`curl` 等依赖；下载失败重试 3 次，安装时等待包管理锁最多 60 秒。索引下载有任何错误即停止，不使用不完整的旧索引继续安装。同一次运行不重复初始化，菜单 `2` 可手动重新执行。这不是自动换源或全系统升级，错误源地址、失效签名等仍需按提示修复。
 
 - BBR 使用当前内核提供的能力，配置写入独立的 `sysctl.d` / `modules-load.d` 文件，不再安装 18.04 内核包或自动重启机器。受限容器或缺少 BBR 模块的内核会报错。
 - Docker 使用当前发行版的官方 APT 源、独立签名密钥及实际 CPU 架构，不再使用 `apt-key`，也不会回退到其他 Ubuntu 版本的源。已有可用 Docker 安装会保留；冲突软件包或旧源需先手动处理。安装中断后如留下源文件，应检查后再重试。
 - Certbot 使用 Ubuntu `universe` 软件源，不再添加旧 PPA。使用 `certbot.timer` 定时检查续期，仅在成功更新证书后重启正在运行的 Gost，不强制每月重新签发。
 - 域名的 A/AAAA 记录需要指向服务器，防火墙和云安全组需要放行 TCP 80（申请和续期）及 Gost 监听端口（默认 443）。80 端口需保持空闲；已有 Web 服务时请自行配置匹配的 Certbot 验证方式。
-- Gost 沿用原脚本的 `ginuerzh/gost` 镜像和 HTTP/2 参数，设置 `unless-stopped` 重启策略。镜像是否支持服务器架构由镜像发布方决定；启动后检查日志。已存在的同名容器（包括停止状态）不会被覆盖。
+- Gost 沿用原脚本的 `ginuerzh/gost` 镜像和 HTTP/2 参数，新容器默认设置 `always` 重启策略。启动脚本时也会启用已有 Docker 服务的开机自启，并通过 `docker update --restart=always gost` 更新已有 Gost 容器，无需重建容器。镜像是否支持服务器架构由镜像发布方决定；启动后检查日志。已存在的同名容器（包括停止状态）不会被覆盖。
+- `always` 会在容器退出后重启；手动 `docker stop gost` 后不会立即重启，但 Docker 服务或主机重启后会再启动。如需让手动停止在重启后仍保持，使用 `unless-stopped`。详见 [Docker 重启策略](https://docs.docker.com/engine/containers/start-containers-automatically/)。
 - 操作失败时脚本停止并显示原始错误，排除问题后重新运行。脚本不修改防火墙规则。
 
 检查服务及续期：
